@@ -1,0 +1,87 @@
+definitions:
+  main.ChatRequest:
+    description: 聊天请求结构
+    properties:
+      system_prompt:
+        description: SystemPrompt 系统提示词，用于设定 AI 角色和行为
+        example: 你是一个有帮助的助手
+        type: string
+      user_message:
+        description: UserMessage 用户消息，即用户的输入
+        example: 你好
+        type: string
+    type: object
+  main.ChatResponse:
+    description: 聊天响应结构
+    properties:
+      content:
+        description: Content 模型回复内容
+        example: 你好！有什么可以帮助你的吗？
+        type: string
+      output_tokens:
+        description: OutputTokens 输出 token 数量
+        example: 50
+        type: integer
+      prompt_tokens:
+        description: PromptTokens 输入 token 数量
+        example: 100
+        type: integer
+      total_tokens:
+        description: TotalTokens 总 token 数量
+        example: 150
+        type: integer
+    type: object
+info:
+  contact: {}
+  description: 根据配置创建 DeepSeek ChatModel 实例
+paths:
+  /chat:
+    post:
+      consumes:
+      - application/json
+      description: 与 DeepSeek 大模型对话
+      parameters:
+      - description: 聊天请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.ChatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.ChatResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 聊天接口
+      tags:
+      - chat
+  /health:
+    get:
+      description: 检查服务是否正常运行
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 健康检查
+      tags:
+      - health
+swagger: "2.0"

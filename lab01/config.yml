@@ -1,0 +1,8 @@
+model:
+  base_url: "https://api.minimaxi.com/v1"
+  api_key: "sk-api-_wDJ7WT76QZ32Ndz5ZvchRn70I68iZ8MUuBL1JTznU2G8tRyNK2p-YIRt4wagCs0oeH4aws-RDZvp_H7nVqk_nZqfYpjvvEXU1C46jCTScjkauGPr13AKT4"
+  model_name: "MiniMax-M2.7"
+
+app:
+  host: "0.0.0.0"
+  port: 8080

@@ -1,0 +1,128 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "根据配置创建 DeepSeek ChatModel 实例",
+        "contact": {}
+    },
+    "paths": {
+        "/chat": {
+            "post": {
+                "description": "与 DeepSeek 大模型对话",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "聊天接口",
+                "parameters": [
+                    {
+                        "description": "聊天请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.ChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.ChatResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "检查服务是否正常运行",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "健康检查",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "main.ChatRequest": {
+            "description": "聊天请求结构",
+            "type": "object",
+            "properties": {
+                "system_prompt": {
+                    "description": "SystemPrompt 系统提示词，用于设定 AI 角色和行为",
+                    "type": "string",
+                    "example": "你是一个有帮助的助手"
+                },
+                "user_message": {
+                    "description": "UserMessage 用户消息，即用户的输入",
+                    "type": "string",
+                    "example": "你好"
+                }
+            }
+        },
+        "main.ChatResponse": {
+            "description": "聊天响应结构",
+            "type": "object",
+            "properties": {
+                "content": {
+                    "description": "Content 模型回复内容",
+                    "type": "string",
+                    "example": "你好！有什么可以帮助你的吗？"
+                },
+                "output_tokens": {
+                    "description": "OutputTokens 输出 token 数量",
+                    "type": "integer",
+                    "example": 50
+                },
+                "prompt_tokens": {
+                    "description": "PromptTokens 输入 token 数量",
+                    "type": "integer",
+                    "example": 100
+                },
+                "total_tokens": {
+                    "description": "TotalTokens 总 token 数量",
+                    "type": "integer",
+                    "example": 150
+                }
+            }
+        }
+    }
+}
