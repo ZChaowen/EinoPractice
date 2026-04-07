@@ -405,3 +405,183 @@ POST /chat
     "total_tokens": 150
 }
 ```
+
+---
+
+## 6. 日志操作指南
+
+### 6.1 日志输出方式
+
+程序支持两种日志输出方式：
+- **标准输出**：日志输出到终端（默认）
+- **文件输出**：日志输出到指定文件
+
+### 6.2 命令行参数
+
+| 参数 | 说明 | 示例 |
+|------|------|------|
+| `-log` | 日志文件路径（留空则输出到标准输出） | `-log app.log` |
+
+### 6.3 使用示例
+
+```bash
+# 输出到标准输出（默认）
+go run chat_quickstart.go
+
+# 输出到指定日志文件
+go run chat_quickstart.go -log app.log
+
+# 输出到指定日志文件（绝对路径）
+go run chat_quickstart.go -log /var/log/chat_service.log
+```
+
+### 6.4 日志格式
+
+```
+2026/04/07 10:30:15 main.go:45: 配置加载成功: base_url=https://api.minimaxi.com, model=MiniMax-M2.7
+2026/04/07 10:30:16 main.go:52: 聊天模型初始化成功
+2026/04/07 10:30:17 main.go:65: 服务启动中，监听地址: 0.0.0.0:8080
+```
+
+日志格式包含：`时间` `日期` `文件名:行号` `日志内容`
+
+### 6.5 代码实现
+
+```go
+import "flag"
+
+func main() {
+    // 解析命令行参数
+    logFile := flag.String("log", "", "日志输出文件路径")
+    flag.Parse()
+
+    // 设置日志输出
+    if *logFile != "" {
+        f, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+        if err != nil {
+            log.Fatalf("打开日志文件失败: %v", err)
+        }
+        defer f.Close()
+        log.SetOutput(f)
+        log.SetFlags(log.LstdFlags | log.Lshortfile)
+    }
+}
+```
+
+---
+
+## 7. 异常捕获与抛出指南
+
+### 7.1 异常处理机制
+
+程序实现了完整的异常捕获与抛出机制，用于处理运行时可能出现的严重错误。
+
+### 7.2 核心组件
+
+#### 7.2.1 Panic Recovery 中间件
+
+`recoveryMiddleware()` 是一个 Gin 中间件，用于捕获所有未处理的 panic：
+
+```go
+func recoveryMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        defer func() {
+            if r := recover(); r != nil {
+                log.Printf("[PANIC RECOVERED] 异常信息: %v\n堆栈跟踪:\n%s", r, getStackTrace())
+                c.JSON(http.StatusInternalServerError, gin.H{
+                    "error": "服务器内部错误，请稍后重试",
+                })
+                c.Abort()
+            }
+        }()
+        c.Next()
+    }
+}
+```
+
+**功能说明：**
+- 捕获 handler 中未处理的 panic
+- 记录异常信息和堆栈跟踪到日志
+- 返回 500 错误给客户端
+- 防止服务器崩溃
+
+#### 7.2.2 堆栈跟踪函数
+
+`getStackTrace()` 获取当前 goroutine 的堆栈跟踪信息：
+
+```go
+func getStackTrace() string {
+    var buf [4096]byte
+    n := runtime.Stack(buf[:], false)
+    return string(buf[:n])
+}
+```
+
+#### 7.2.3 异常抛出函数
+
+`panicIfErr()` 是一个辅助函数，用于在错误发生时抛出 panic：
+
+```go
+func panicIfErr(err error, msg string) {
+    if err != nil {
+        log.Printf("[PANIC THROW] %s: %v", msg, err)
+        panic(fmt.Sprintf("%s: %v", msg, err))
+    }
+}
+```
+
+### 7.3 使用示例
+
+#### 示例一：在初始化阶段使用 panicIfErr
+
+```go
+// 初始化聊天模型
+if err := initChatModel(cfg); err != nil {
+    panicIfErr(err, "初始化聊天模型失败")
+}
+```
+
+#### 示例二：在业务逻辑中主动抛出异常
+
+```go
+func chatHandler(c *gin.Context) {
+    // ... 业务逻辑 ...
+
+    response, err := chatModel.Generate(ctx, messages)
+    if err != nil {
+        log.Printf("[ERROR] 模型调用失败: %v", err)
+        panic("chat model generation failed")
+    }
+
+    // ... 后续逻辑 ...
+}
+```
+
+#### 示例三：中间件自动捕获
+
+当 handler 中发生任何未处理的 panic，中间件会自动捕获：
+
+```
+[GIN] 2026/04/07 - 10:30:20 | 500 |    152.3µs |  192.168.1.1 | POST   /chat
+[PANIC RECOVERED] 异常信息: chat model generation failed
+堆栈跟踪:
+goroutine 8 [running]:
+main.chatHandler(0xc0000a2000)
+    /path/to/chat_quickstart.go:143
+...
+```
+
+### 7.4 日志中的异常标记
+
+| 标记 | 含义 |
+|------|------|
+| `[PANIC RECOVERED]` | panic 被 recoveryMiddleware 捕获 |
+| `[PANIC THROW]` | panic 被 panicIfErr 函数主动抛出 |
+| `[ERROR]` | 普通错误日志（不影响程序运行） |
+
+### 7.5 注意事项
+
+1. **不要滥用 panic**：panic 用于处理真正的不可恢复错误
+2. **及时恢复**：确保 panic 能在中间件或 defer 中被恢复
+3. **记录日志**：所有 panic 都应该记录到日志中，便于排查问题
+4. **堆栈信息**：日志中的堆栈跟踪有助于快速定位问题代码

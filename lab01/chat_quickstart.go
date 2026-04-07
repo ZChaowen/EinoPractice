@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"runtime"
 	"time"
 
 	_ "github.com/ZChaowen/EinoPractice/lab01/docs"
@@ -173,7 +175,59 @@ func healthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+// recoveryMiddleware panic 恢复中间件，捕获所有未处理的 panic 并返回 500 错误
+func recoveryMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if r := recover(); r != nil {
+				// 记录 panic 到日志
+				log.Printf("[PANIC RECOVERED] 异常信息: %v\n堆栈跟踪:\n%s", r, getStackTrace())
+				// 返回内部错误响应
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "服务器内部错误，请稍后重试",
+				})
+				c.Abort()
+			}
+		}()
+		c.Next()
+	}
+}
+
+// getStackTrace 获取当前 goroutine 的堆栈跟踪信息
+func getStackTrace() string {
+	var buf [4096]byte
+	n := runtime.Stack(buf[:], false)
+	return string(buf[:n])
+}
+
+// panicIfErr 如果错误不为 nil，则抛出 panic
+func panicIfErr(err error, msg string) {
+	if err != nil {
+		log.Printf("[PANIC THROW] %s: %v", msg, err)
+		panic(fmt.Sprintf("%s: %v", msg, err))
+	}
+}
+
 func main() {
+	// -------------------- 0. 解析命令行参数 --------------------
+	logFile := flag.String("log", "", "日志输出文件路径（留空则输出到标准输出）")
+	flag.Parse()
+
+	// 设置日志输出
+	if *logFile != "" {
+		f, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			log.Fatalf("打开日志文件失败: %v", err)
+		}
+		defer f.Close()
+		log.SetOutput(f)
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
+		log.Printf("日志将输出到文件: %s", *logFile)
+	} else {
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
+		log.Println("日志将输出到标准输出")
+	}
+
 	// -------------------- 1. 加载配置 --------------------
 	configPath := "config.yml"
 	var err error
@@ -192,7 +246,9 @@ func main() {
 	// -------------------- 3. 设置 Gin 路由 --------------------
 	// 使用 ReleaseMode 减少日志输出
 	gin.SetMode(gin.ReleaseMode)
-	r := gin.Default()
+	r := gin.New()
+	// 注册 panic 恢复中间件
+	r.Use(recoveryMiddleware())
 
 	// 注册 HTTP 处理函数
 	r.GET("/health", healthHandler) // 健康检查
