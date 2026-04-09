@@ -1,0 +1,79 @@
+swagger: "2.0"
+info:
+  description: Graph聊天响应结构
+  title: ""
+  contact: {}
+  version: ""
+host: ""
+basePath: ""
+paths:
+  /graph:
+    post:
+      description: 基于Graph编排的篮球教练助手
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      tags:
+        - graph
+      summary: Graph聊天接口
+      parameters:
+        - description: Graph请求
+          name: request
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/main.GraphRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.GraphResponse'
+  /health:
+    get:
+      description: 检查服务是否正常运行
+      produces:
+        - application/json
+      tags:
+        - health
+      summary: 健康检查
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+            additionalProperties:
+              type: string
+definitions:
+  main.GraphRequest:
+    description: Graph聊天请求结构
+    type: object
+    properties:
+      user_query:
+        description: UserQuery 用户查询内容
+        type: string
+        example: 我叫morning，邮箱是lumworn@gmail.com，帮我制定训练计划
+  main.GraphResponse:
+    description: Graph聊天响应结构
+    type: object
+    properties:
+      content:
+        description: Content 模型回复内容
+        type: string
+        example: 根据您的信息，我们为您推荐...
+      output_tokens:
+        description: OutputTokens 输出token数量
+        type: integer
+        example: 50
+      prompt_tokens:
+        description: PromptTokens 输入token数量
+        type: integer
+        example: 100
+      reasoning_content:
+        description: ReasoningContent 思考内容（如果有）
+        type: string
+        example: ""
+      total_tokens:
+        description: TotalTokens 总token数量
+        type: integer
+        example: 150
