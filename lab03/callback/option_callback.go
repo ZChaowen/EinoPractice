@@ -1,38 +1,62 @@
-// demo_option_callback_deepseek.go
 package main
 
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"os"
-	"reflect"
-	"strings"
 	"time"
-	"unsafe"
 
-	"github.com/cloudwego/eino-ext/components/model/deepseek"
+	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"gopkg.in/yaml.v2"
 )
 
-/*
-本 demo 适配 eino v0.7.8 的 Option 结构：
-
-type Option struct {
-  apply func(opts *Options)
-  implSpecificOptFn any
+// Config 模型配置
+type Config struct {
+	Model ModelConfig `yaml:"model"`
+	App   AppConfig   `yaml:"app"`
 }
 
-由于 apply/implSpecificOptFn 是未导出字段（小写），在 main 包不能直接访问，
-*/
+// ModelConfig 大模型配置
+type ModelConfig struct {
+	BaseURL    string  `yaml:"base_url"`
+	APIKey     string  `yaml:"api_key"`
+	ModelName  string  `yaml:"model_name"`
+	Timeout    int     `yaml:"timeout"`
+	Temperature float64 `yaml:"temperature"`
+	TopP       float64 `yaml:"top_p"`
+	MaxTokens  int     `yaml:"max_tokens"`
+}
+
+// AppConfig 应用配置
+type AppConfig struct {
+	Host string `yaml:"host"`
+	Port int    `yaml:"port"`
+}
+
+// loadConfig 加载配置文件
+func loadConfig(configPath string) (*Config, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取配置文件失败: %w", err)
+	}
+
+	var config Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("解析配置文件失败: %w", err)
+	}
+
+	return &config, nil
+}
 
 // -----------------------------
 // 1) 自定义 Options（实现特定）
 // -----------------------------
 type MyChatModelOptions struct {
-	Options    *model.Options
 	RetryCount int
 	Timeout    time.Duration
 }
@@ -53,7 +77,7 @@ func WithTimeout(timeout time.Duration) model.Option {
 }
 
 // -----------------------------
-// 3) Callback 机制（最简 demo）
+// 3) Callback 机制
 // -----------------------------
 type CallbackInput struct {
 	Model    string
@@ -107,53 +131,63 @@ func (LoggingCallback) OnEnd(ctx context.Context, out CallbackOutput, err error)
 // 4) WrappedChatModel：在 Generate 中应用 options + callbacks + retry/timeout
 // -----------------------------
 type WrappedChatModel struct {
-	inner     *deepseek.ChatModel
+	inner     *openai.ChatModel
 	modelName string
 	callbacks []ChatCallback
 }
 
-func NewWrappedDeepSeek(apiKey string, callbacks ...ChatCallback) (*WrappedChatModel, error) {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return nil, errors.New("missing DEEPSEEK_API_KEY")
+func NewWrappedChatModel(cfg *Config, callbacks ...ChatCallback) (*WrappedChatModel, error) {
+	if cfg.Model.APIKey == "" {
+		return nil, errors.New("missing API_KEY")
 	}
-	inner, err := deepseek.NewChatModel(context.Background(), &deepseek.ChatModelConfig{
-		APIKey:  apiKey,
-		Model:   "deepseek-chat",
-		BaseURL: "https://api.deepseek.com",
+
+	timeout := time.Duration(cfg.Model.Timeout) * time.Second
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+
+	temperature := float32(cfg.Model.Temperature)
+	maxTokens := cfg.Model.MaxTokens
+
+	inner, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
+		APIKey:     cfg.Model.APIKey,
+		Model:      cfg.Model.ModelName,
+		BaseURL:    cfg.Model.BaseURL,
+		Timeout:    timeout,
+		Temperature: &temperature,
+		MaxTokens:   &maxTokens,
 	})
 	if err != nil {
 		return nil, err
 	}
+
 	return &WrappedChatModel{
 		inner:     inner,
-		modelName: "deepseek-chat",
+		modelName: cfg.Model.ModelName,
 		callbacks: callbacks,
 	}, nil
 }
 
 func (m *WrappedChatModel) Generate(ctx context.Context, messages []*schema.Message, opts ...model.Option) (*schema.Message, error) {
-	// 1) 解析 options（通用 + 实现特定）
-	impl := &MyChatModelOptions{Options: &model.Options{}}
-	if err := applyMyOptions(impl, opts...); err != nil {
-		return nil, err
-	}
+	// 1) 使用公开 API 解析 options（通用 + 实现特定）
+	_ = model.GetCommonOptions(nil, opts...) // 通用选项（Temperature, MaxTokens 等由 inner 模型处理）
+	myOpts := model.GetImplSpecificOptions(&MyChatModelOptions{}, opts...)
 
 	// 2) timeout（用 option 创建子 context）
 	callCtx := ctx
 	cancel := func() {}
-	if impl.Timeout > 0 {
-		callCtx, cancel = context.WithTimeout(ctx, impl.Timeout)
+	if myOpts.Timeout > 0 {
+		callCtx, cancel = context.WithTimeout(ctx, myOpts.Timeout)
+		defer cancel()
 	}
-	defer cancel()
 
 	// 3) callback start
 	in := CallbackInput{
 		Model:    m.modelName,
 		Messages: messages,
 		Extra: map[string]any{
-			"retry_count": impl.RetryCount,
-			"timeout":     impl.Timeout.String(),
+			"retry_count": myOpts.RetryCount,
+			"timeout":     myOpts.Timeout.String(),
 		},
 	}
 	for _, cb := range m.callbacks {
@@ -168,7 +202,7 @@ func (m *WrappedChatModel) Generate(ctx context.Context, messages []*schema.Mess
 	)
 	start := time.Now()
 
-	retries := impl.RetryCount
+	retries := myOpts.RetryCount
 	if retries < 0 {
 		retries = 0
 	}
@@ -212,74 +246,22 @@ func (m *WrappedChatModel) Generate(ctx context.Context, messages []*schema.Mess
 }
 
 // -----------------------------
-// 5) applyMyOptions：适配 v0.7.8 Option（含未导出字段）
-// -----------------------------
-func applyMyOptions(implOpts *MyChatModelOptions, opts ...model.Option) error {
-	if implOpts == nil {
-		return errors.New("nil impl options")
-	}
-	if implOpts.Options == nil {
-		implOpts.Options = &model.Options{}
-	}
-
-	for _, opt := range opts {
-		// 1) 通用 options：调用 opt.apply(*model.Options)
-		if applyFn := getApplyFn(opt); applyFn != nil {
-			applyFn(implOpts.Options)
-		}
-		// 2) 实现特定 options：opt.implSpecificOptFn 断言 func(*MyChatModelOptions)
-		if implFn := getImplSpecificFn(opt); implFn != nil {
-			implFn(implOpts)
-		}
-	}
-	return nil
-}
-
-func getApplyFn(opt model.Option) func(*model.Options) {
-	v := reflect.ValueOf(opt)
-	f := v.FieldByName("apply")
-	if !f.IsValid() || f.IsZero() {
-		return nil
-	}
-	// 未导出字段 Interface() 可能 panic，先用 CanInterface 判断
-	if !f.CanInterface() {
-		// 通过 reflect.NewAt 绕过（仅用于 demo/学习）
-		f = reflect.NewAt(f.Type(), unsafePointer(f)).Elem()
-	}
-	fn, ok := f.Interface().(func(*model.Options))
-	if !ok {
-		return nil
-	}
-	return fn
-}
-
-func getImplSpecificFn(opt model.Option) func(*MyChatModelOptions) {
-	v := reflect.ValueOf(opt)
-	f := v.FieldByName("implSpecificOptFn")
-	if !f.IsValid() || f.IsZero() {
-		return nil
-	}
-	if !f.CanInterface() {
-		f = reflect.NewAt(f.Type(), unsafePointer(f)).Elem()
-	}
-	fn, ok := f.Interface().(func(*MyChatModelOptions))
-	if !ok {
-		return nil
-	}
-	return fn
-}
-
-// --- 小工具：把 reflect.Value 的地址转成 unsafe.Pointer（为读取未导出字段服务） ---
-func unsafePointer(v reflect.Value) unsafe.Pointer {
-	return unsafe.Pointer(v.UnsafeAddr())
-}
-
-// -----------------------------
-// 6) main：运行 demo
+// 5) main：运行 demo
 // -----------------------------
 func main() {
-	apiKey := os.Getenv("DEEPSEEK_API_KEY")
-	w, err := NewWrappedDeepSeek(apiKey, LoggingCallback{})
+	// 解析命令行参数
+	configPath := flag.String("config", "config.yml", "配置文件路径")
+	flag.Parse()
+
+	// 加载配置
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		log.Fatalf("加载配置失败: %v", err)
+	}
+	log.Printf("配置加载成功: base_url=%s, model=%s", cfg.Model.BaseURL, cfg.Model.ModelName)
+
+	// 创建 WrappedChatModel
+	w, err := NewWrappedChatModel(cfg, LoggingCallback{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -291,7 +273,7 @@ func main() {
 
 	_, err = w.Generate(context.Background(), msgs,
 		WithRetryCount(2),
-		WithTimeout(12*time.Second),
+		WithTimeout(60*time.Second),
 	)
 	if err != nil {
 		log.Fatal("generate failed:", err)

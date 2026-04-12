@@ -3,19 +3,59 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/cloudwego/eino-ext/components/model/deepseek"
+	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/schema"
+	"gopkg.in/yaml.v2"
 )
 
-// Translator 基于 Deepseek 的翻译助手
+// Config 模型配置
+type Config struct {
+	Model ModelConfig `yaml:"model"`
+	App   AppConfig   `yaml:"app"`
+}
+
+// ModelConfig 大模型配置
+type ModelConfig struct {
+	BaseURL    string  `yaml:"base_url"`
+	APIKey     string  `yaml:"api_key"`
+	ModelName  string  `yaml:"model_name"`
+	Timeout    int     `yaml:"timeout"`
+	Temperature float64 `yaml:"temperature"`
+	TopP       float64 `yaml:"top_p"`
+	MaxTokens  int     `yaml:"max_tokens"`
+}
+
+// AppConfig 应用配置
+type AppConfig struct {
+	Host string `yaml:"host"`
+	Port int    `yaml:"port"`
+}
+
+// loadConfig 加载配置文件
+func loadConfig(configPath string) (*Config, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取配置文件失败: %w", err)
+	}
+
+	var config Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("解析配置文件失败: %w", err)
+	}
+
+	return &config, nil
+}
+
+// Translator 基于大模型的翻译助手
 type Translator struct {
-	chatModel *deepseek.ChatModel
+	chatModel *openai.ChatModel
 }
 
 // TranslatorConfig 翻译器配置
@@ -33,10 +73,10 @@ func NewTranslator(cfg TranslatorConfig) (*Translator, error) {
 		return nil, errors.New("missing api key")
 	}
 	if cfg.Model == "" {
-		cfg.Model = "deepseek-chat"
+		cfg.Model = "gpt-4"
 	}
 	if cfg.BaseURL == "" {
-		cfg.BaseURL = "https://api.deepseek.com"
+		cfg.BaseURL = "https://api.openai.com/v1"
 	}
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 30 * time.Second
@@ -45,11 +85,11 @@ func NewTranslator(cfg TranslatorConfig) (*Translator, error) {
 		cfg.Retries = 0
 	}
 
-	// 建模时可用 Background；真正超时控制在 Translate 时做
-	chatModel, err := deepseek.NewChatModel(context.Background(), &deepseek.ChatModelConfig{
+	chatModel, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
 		APIKey:  cfg.APIKey,
 		Model:   cfg.Model,
 		BaseURL: cfg.BaseURL,
+		Timeout: cfg.Timeout,
 	})
 	if err != nil {
 		return nil, err
@@ -85,9 +125,9 @@ func (t *Translator) Translate(ctx context.Context, text, targetLang string) (st
 		schema.UserMessage(text),
 	}
 
-	// 简单重试（网络抖动/429 等情况你可再细化错误判断）
+	// 简单重试
 	var lastErr error
-	for attempt := 0; attempt <= 2; attempt++ { // 默认 3 次（你可配置）
+	for attempt := 0; attempt <= 2; attempt++ {
 		resp, err := t.chatModel.Generate(ctx, messages)
 		if err == nil {
 			return strings.TrimSpace(resp.Content), nil
@@ -106,24 +146,36 @@ func (t *Translator) Translate(ctx context.Context, text, targetLang string) (st
 }
 
 func main() {
-	apiKey := os.Getenv("DEEPSEEK_API_KEY")
+	// -------------------- 0. 解析命令行参数 --------------------
+	configPath := flag.String("config", "config.yml", "配置文件路径")
+	flag.Parse()
+
+	// -------------------- 1. 加载配置 --------------------
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		log.Fatalf("加载配置失败: %v", err)
+	}
+	log.Printf("配置加载成功: base_url=%s, model=%s", cfg.Model.BaseURL, cfg.Model.ModelName)
+
+	// -------------------- 2. 创建翻译器 --------------------
 	translator, err := NewTranslator(TranslatorConfig{
-		APIKey:  apiKey,
-		Model:   "deepseek-chat",
-		BaseURL: "https://api.deepseek.com",
-		Timeout: 30 * time.Second,
+		APIKey:  cfg.Model.APIKey,
+		Model:   cfg.Model.ModelName,
+		BaseURL: cfg.Model.BaseURL,
+		Timeout: time.Duration(cfg.Model.Timeout) * time.Second,
 		Retries: 2,
 	})
 	if err != nil {
 		log.Fatalf("创建翻译器失败: %v", err)
 	}
 
+	// -------------------- 3. 测试翻译 --------------------
 	tests := []struct {
 		content string
 		target  string
 	}{
 		{"Hello, how are you?", "中文"},
-		{"Eino 是一个强大的 AI 开发框架", "English"},
+		{"Eino is a powerful AI development framework", "中文"},
 		{"Les roses sont rouges", "中文"},
 		{"- item1\n- item2\n", "中文"},
 	}
