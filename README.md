@@ -8,7 +8,6 @@
 
 #### 1. 访问项目地址
 
-- GitHub 仓库: [https://github.com/NuyoahCh/einotelos](https://github.com/NuyoahCh/einotelos)
 - CloudWeGo Eino 官方文档: [https://rcn3ahrrdvjj.feishu.cn/wiki/space/7582137522705140933](https://rcn3ahrrdvjj.feishu.cn/wiki/space/7582137522705140933)
 
 #### 2. 安装 Golang SDK
