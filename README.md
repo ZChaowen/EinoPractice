@@ -40,7 +40,7 @@
 cd ~/go/src/github.com/{your_username}/
 ```
 
-#### 7. 安装项目依赖
+#### 5. 安装项目依赖
 
 ```bash
 # 下载并安装项目依赖包
@@ -48,7 +48,7 @@ go mod download
 go mod tidy
 ```
 
-#### 8. 配置环境变量
+#### 6. 配置环境变量
 
 本项目需要配置 API Key 才能正常运行。支持多种 LLM 服务商：
 
@@ -58,20 +58,6 @@ export DEEPSEEK_API_KEY="your_deepseek_api_key"
 ```
 - 注册地址: [https://platform.deepseek.com/](https://platform.deepseek.com/)
 - 新用户赠送免费额度
-
-##### 火山引擎 ARK（推荐使用）
-```bash
-export ARK_API_KEY="your_ark_api_key"
-export ARK_MODEL_NAME="your_model_name"
-```
-- 注册地址: 火山引擎控制台
-
-##### Ollama（本地部署，可选）
-```bash
-# 如果使用本地 Ollama 服务
-# 下载安装: https://ollama.ai/
-ollama serve
-```
 
 **环境变量持久化（推荐）**
 
@@ -86,65 +72,6 @@ source ~/.zshrc
 echo 'export DEEPSEEK_API_KEY="your_deepseek_api_key"' >> ~/.bashrc
 source ~/.bashrc
 ```
-
----
-
-## 目录组织
-
-### 核心模块
-
-- **lab01/** - 聊天快速入门，演示最基础的对话功能
-- **lab02/** - 工作流与链式调用
-  - `chain/` - 链式调用模式
-  - `graph/` - 图式工作流
-  - `workflow/` - 工作流编排
-- **lab03/** - 生成配置与错误处理
-  - `generate/` - 单次、多次、流式生成
-  - `callback/` - 回调函数配置
-  - `error/` - 错误处理机制
-  - `case/` - 翻译助手实战案例
-- **lab04/** - 提示词工程
-  - `complex/` - 复杂逻辑提示词
-  - `multi/` - 多类型消息
-  - `multiplex/` - 模型多路复用
-  - `replace/` - 变量替换
-- **lab05/** - 文档加载与解析
-  - `loader/` - 文档加载器（本地、URL、S3）
-  - `parser/` - 文档解析器（PDF、HTML、Text）
-  - `transformer/` - 文档切分器（Markdown、递归、语义）
-  - `extparser/` - 扩展解析器
-  - `case/` - 文档处理案例
-- **lab06/** - 向量化与检索
-  - `text/` - 文本向量化
-  - `document/` - 文档向量化
-  - `memory/` - 记忆向量化
-  - `case/` - 文档问答案例
-- **lab07/** - Lambda 函数
-  - `basic/` - 基础 Lambda 功能
-  - `option/` - Lambda 配置选项
-  - `stream/` - 流式 Lambda
-- **lab08/** - 索引器
-  - `alone/` - 独立索引器
-  - `arrange/` - 编排索引器
-- **lab09/** - 检索增强生成（RAG）
-  - `retrieval_augment.go` - RAG 完整实现
-- **lab10/** - 工具调用
-  - `interface/` - 计算器等接口工具
-  - `weather/` - 天气查询工具
-  - `db/` - 数据库工具
-  - `file/` - 文件操作工具
-  - `newtool/` - 自定义工具
-  - `case/` - 工具集成案例
-
-### 辅助目录
-
-- **einox/** - 实战项目主入口（待实现）
-- **output/** - 各实验的输出结果和文档
-- **go.mod** - Go 模块依赖配置
-- **LICENSE** - 开源许可证
-- **README.md** - 项目说明文档
-
----
 
 ## 实验步骤
 
@@ -229,32 +156,6 @@ go build -o bin/chat_quickstart lab01/chat_quickstart.go
 go clean -modcache
 go mod download
 ```
-
-### 运行时提示 API Key 错误
-
-```bash
-# 检查环境变量是否设置
-echo $DEEPSEEK_API_KEY
-
-# 如果为空，重新设置
-export DEEPSEEK_API_KEY="your_api_key"
-```
-
-### 网络连接问题
-
-```bash
-# 配置 Go 模块代理（中国大陆用户推荐）
-go env -w GOPROXY=https://goproxy.cn,direct
-```
-
-### 代码提示和补全不生效
-
-在 VS Code 中：
-1. 安装 Go 扩展
-2. 执行命令：`Go: Install/Update Tools`
-3. 重启 VS Code
-
----
 
 ## 进阶学习资源
 
